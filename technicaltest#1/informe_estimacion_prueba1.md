@@ -1,3 +1,4 @@
+
 # **Informe de Estimación de Costos de Equipos para Proyecto de Construcción**
 
 ## **1. Explicación del caso**
@@ -231,4 +232,12 @@ La automatización del pipeline asegura reproducibilidad, claridad técnica y la
 * `informe_estimacion.md` (este archivo)
 * `README.md`
 
---
+---
+
+Si deseas, puedo generar también:
+
+* **README profesional**
+* **Presentación ejecutiva (markdown o PowerPoint)**
+* **Versión del informe más corta o más técnica**, según lo que quieras entregar.
+
+¿Quieres que lo prepare?
