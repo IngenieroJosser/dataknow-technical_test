@@ -1,42 +1,38 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any
 import uvicorn
-import pandas as pd
 import logging
 from datetime import datetime
-import json
 import sys
 import os
+import json
 
 # Configurar logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Agregar directorio actual al path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Intentar importar módulos RAG (no crítico para funcionalidad básica)
-try:
-    from rag_pipeline import LegalRAGPipeline
-    from document_processor import DocumentProcessor
-    RAG_AVAILABLE = True
-    logger.info("Módulos RAG disponibles")
-except ImportError as e:
-    logger.warning(f"Módulos RAG no disponibles: {e}")
-    RAG_AVAILABLE = False
+# Importar módulos RAG
+from rag_pipeline import LegalRAGPipeline
+from document_processor import DocumentProcessor
 
 app = FastAPI(
     title="Legal AI Assistant API",
-    description="API para consulta de historial de demandas legales",
-    version="2.0.0"
+    description="API para consulta de historial de demandas legales usando RAG",
+    version="3.0.0"
 )
 
-# Configuración CORS PERMISIVA
+# Configuración CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Para desarrollo
+    allow_origins=["*"],  # En producción, especificar dominios
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,109 +47,121 @@ class QueryResponse(BaseModel):
     confidence: float
     matched_cases: List[dict]
     timestamp: str
+    total_cases_searched: int
+    rag_used: bool
 
-# Cargar datos desde Excel
-def load_excel_data(file_path: str = "data/sentencias_pasadas.xlsx") -> List[Dict[str, Any]]:
-    """Carga los casos desde el archivo Excel"""
+# Inicializar RAG pipeline global
+rag_pipeline = None
+TOTAL_CASES = 0
+
+def initialize_rag_system():
+    """Inicializa el sistema RAG con datos del Excel"""
+    global rag_pipeline, TOTAL_CASES
+    
     try:
-        # Verificar si el archivo existe
-        if not os.path.exists(file_path):
-            logger.error(f"Archivo no encontrado: {file_path}")
-            # Crear datos de ejemplo para desarrollo
-            return [
-                {
-                    "id": 1,
-                    "Relevancia": "Alta",
-                    "Providencia": "Sentencia 2023-001",
-                    "Tipo": "Difamación en redes sociales",
-                    "Fecha Sentencia": "2023-01-15",
-                    "Tema - subtema": "Redes Sociales / Facebook",
-                    "resuelve": "Condena por difamación digital",
-                    "sintesis": "Usuario publicó información falsa sobre competidor en Facebook"
-                },
-                {
-                    "id": 2,
-                    "Relevancia": "Alta",
-                    "Providencia": "Sentencia 2023-045",
-                    "Tipo": "Acoso Escolar",
-                    "Fecha Sentencia": "2023-03-22",
-                    "Tema - subtema": "Educación / Acoso Digital",
-                    "resuelve": "Protección víctima y medidas correctivas",
-                    "sintesis": "Acoso mediante WhatsApp entre estudiantes de colegio"
-                },
-                {
-                    "id": 3,
-                    "Relevancia": "Media",
-                    "Providencia": "Auto 2023-067",
-                    "Tipo": "PIAR",
-                    "Fecha Sentencia": "2023-05-10",
-                    "Tema - subtema": "Educación / Inclusión",
-                    "resuelve": "Implementación protocolo PIAR",
-                    "sintesis": "Escuela no aplicó Protocolo de Inclusión y Acompañamiento"
-                }
-            ]
+        logger.info(" Inicializando sistema RAG...")
         
-        df = pd.read_excel(file_path)
-        logger.info(f"Excel cargado: {len(df)} casos")
+        # 1. Crear pipeline RAG
+        rag_pipeline = LegalRAGPipeline()
         
-        # Convertir a lista de diccionarios
-        cases = []
-        for idx, row in df.iterrows():
-            case = {
-                "id": idx + 1,
-                "Relevancia": str(row.get('Relevancia', 'No especificado')),
-                "Providencia": str(row.get('Providencia', 'No especificado')),
-                "Tipo": str(row.get('Tipo', 'No especificado')),
-                "Fecha Sentencia": str(row.get('Fecha Sentencia', 'No especificado')),
-                "Tema - subtema": str(row.get('Tema - subtema', 'No especificado')),
-                "resuelve": str(row.get('resuelve', 'No especificado')),
-                "sintesis": str(row.get('sintesis', 'No especificado'))
-            }
-            cases.append(case)
+        # 2. Procesar archivo Excel
+        processor = DocumentProcessor(rag_pipeline)
         
-        return cases
+        # Ruta al archivo de datos
+        data_file = "data/sentencias_pasadas.xlsx"
+        
+        if not os.path.exists(data_file):
+            # Crear datos de ejemplo si no existe
+            logger.warning(f" Archivo {data_file} no encontrado. Creando datos de ejemplo...")
+            create_sample_data(data_file)
+        
+        # 3. Procesar casos
+        TOTAL_CASES = processor.process_excel_file(data_file)
+        
+        logger.info(f" Sistema RAG inicializado con {TOTAL_CASES} casos")
+        return True
         
     except Exception as e:
-        logger.error(f"Error cargando Excel: {e}")
-        return []
+        logger.error(f" Error inicializando RAG: {e}")
+        return False
 
-# Cargar datos al iniciar
-CASES_DATA = load_excel_data()
-
-# Funciones de búsqueda
-def search_cases_by_keyword(keyword: str, max_results: int = 3) -> List[Dict]:
-    """Busca casos que contengan la palabra clave"""
-    keyword_lower = keyword.lower()
-    results = []
+def create_sample_data(file_path: str):
+    """Crea datos de ejemplo para pruebas"""
+    import pandas as pd
     
-    for case in CASES_DATA:
-        # Buscar en todos los campos de texto
-        text_to_search = f"{case.get('Tipo', '')} {case.get('Tema - subtema', '')} {case.get('sintesis', '')} {case.get('resuelve', '')}".lower()
-        
-        if keyword_lower in text_to_search:
-            results.append(case)
-            if len(results) >= max_results:
-                break
+    sample_data = [
+        {
+            "Relevancia": "Alta",
+            "Providencia": "Sentencia 2023-001",
+            "Tipo": "Difamación en redes sociales",
+            "Fecha Sentencia": "2023-01-15",
+            "Tema - subtema": "Redes Sociales / Facebook",
+            "resuelve": "Condena por difamación digital con multa de $10,000",
+            "sintesis": "Usuario publicó información falsa sobre competidor en Facebook, afectando su reputación"
+        },
+        {
+            "Relevancia": "Alta",
+            "Providencia": "Sentencia 2023-045",
+            "Tipo": "Acoso Escolar",
+            "Fecha Sentencia": "2023-03-22",
+            "Tema - subtema": "Educación / Acoso Digital",
+            "resuelve": "Protección a víctima y medidas correctivas para el acosador",
+            "sintesis": "Acoso mediante WhatsApp entre estudiantes de colegio, con mensajes amenazantes"
+        },
+        {
+            "Relevancia": "Media",
+            "Providencia": "Auto 2023-067",
+            "Tipo": "PIAR - Inclusión Educativa",
+            "Fecha Sentencia": "2023-05-10",
+            "Tema - subtema": "Educación / Inclusión",
+            "resuelve": "Obligatoriedad de implementar Protocolo de Inclusión y Acompañamiento",
+            "sintesis": "Escuela no aplicó Protocolo de Inclusión y Acompañamiento para estudiante con necesidades especiales"
+        },
+        {
+            "Relevancia": "Media",
+            "Providencia": "Sentencia 2023-089",
+            "Tipo": "Suplantación de identidad",
+            "Fecha Sentencia": "2023-07-18",
+            "Tema - subtema": "Redes Sociales / Instagram",
+            "resuelve": "Cierre de cuenta falsa y compensación por daños morales",
+            "sintesis": "Creación de perfil falso en Instagram usando fotos e información personal"
+        },
+        {
+            "Relevancia": "Baja",
+            "Providencia": "Auto 2023-112",
+            "Tipo": "Derecho al olvido digital",
+            "Fecha Sentencia": "2023-09-05",
+            "Tema - subtema": "Internet / Privacidad",
+            "resuelve": "Orden de eliminar información personal antigua de buscadores",
+            "sintesis": "Persona solicita eliminar información personal desactualizada de resultados de búsqueda"
+        }
+    ]
     
-    return results
+    # Crear directorio si no existe
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    
+    # Guardar como Excel
+    df = pd.DataFrame(sample_data)
+    df.to_excel(file_path, index=False)
+    logger.info(f" Datos de ejemplo creados en: {file_path}")
 
-def get_all_cases(limit: int = 10) -> List[Dict]:
-    """Obtiene todos los casos (limitados)"""
-    return CASES_DATA[:limit]
+# Inicializar al iniciar
+initialize_rag_system()
 
-# Endpoints
 @app.get("/")
 async def root():
     return {
-        "message": "Legal AI Assistant API - Prueba Técnica",
-        "version": "2.0.0",
+        "message": "Legal AI Assistant API - Prueba Técnica DataKnow",
+        "version": "3.0.0",
         "status": "active",
-        "cases_loaded": len(CASES_DATA),
+        "cases_loaded": TOTAL_CASES,
+        "rag_system": "Operativo" if rag_pipeline else "No disponible",
         "endpoints": {
-            "GET /health": "Verificar estado",
-            "POST /query": "Consultar casos",
-            "GET /cases": "Listar casos",
-            "GET /test": "Prueba de conexión"
+            "GET /health": "Verificar estado del sistema",
+            "POST /query": "Consultar casos legales",
+            "GET /cases": "Listar casos disponibles",
+            "GET /debug": "Información de diagnóstico",
+            "GET /test": "Prueba de conectividad"
         }
     }
 
@@ -161,10 +169,12 @@ async def root():
 async def health_check():
     return {
         "status": "healthy",
-        "service": "legal-ai-backend",
+        "service": "legal-ai-assistant",
         "timestamp": datetime.now().isoformat(),
-        "cases_loaded": len(CASES_DATA),
-        "version": "2.0.0"
+        "cases_loaded": TOTAL_CASES,
+        "rag_available": rag_pipeline is not None,
+        "vector_database": "FAISS",
+        "embedding_model": "all-MiniLM-L6-v2"
     }
 
 @app.get("/test")
@@ -178,177 +188,107 @@ async def test_endpoint():
 
 @app.get("/cases")
 async def get_cases(limit: int = 10):
+    """Devuelve lista de casos (solo metadatos)"""
+    # Nota: No podemos devolver todos los casos desde FAISS directamente
+    # En un sistema real, tendríamos una base de datos adicional
     return {
-        "cases": CASES_DATA[:limit],
-        "total": len(CASES_DATA),
-        "limit": limit
+        "message": f"Sistema contiene {TOTAL_CASES} casos en base de datos vectorial",
+        "sample_queries": [
+            "¿Cuáles son las sentencias de 3 demandas?",
+            "¿De qué se trataron las 3 demandas anteriores?",
+            "¿Cuál fue la sentencia del caso que habla de acoso escolar?",
+            "¿Diga el detalle de la demanda relacionada con acoso escolar?",
+            "¿Existen casos que hablan sobre el PIAR?"
+        ]
     }
 
 @app.post("/query")
 async def query_legal_cases(request: QueryRequest):
-    question = request.question.lower()
-    logger.info(f"Pregunta recibida: {question}")
-    
-    # Inicializar respuesta
-    answer = ""
-    confidence = 0.9
-    matched_cases = []
+    """Endpoint principal para consultas"""
+    question = request.question
+    logger.info(f" Pregunta recibida: {question}")
     
     try:
-        # 1. ¿Cuáles son las sentencias de 3 demandas?
-        if "sentencias de 3 demandas" in question or "sentencias de tres demandas" in question:
-            matched_cases = get_all_cases(3)
-            answer = "**Sentencias de 3 demandas del sistema:**\n\n"
-            
-            for i, case in enumerate(matched_cases, 1):
-                answer += f"{i}. **{case.get('Tipo', 'Caso legal')}**\n"
-                answer += f"   • **Providencia:** {case.get('Providencia', 'No especificada')}\n"
-                answer += f"   • **Resolución:** {case.get('resuelve', 'No especificada')}\n"
-                answer += f"   • **Fecha:** {case.get('Fecha Sentencia', 'No especificada')}\n"
-                answer += f"   • **Tema:** {case.get('Tema - subtema', 'No especificado')}\n\n"
+        if not rag_pipeline:
+            raise HTTPException(
+                status_code=503,
+                detail="Sistema RAG no disponible. Intenta reiniciar el backend."
+            )
         
-        # 2. ¿De qué se trataron las 3 demandas anteriores?
-        elif "se trataron" in question and ("3" in question or "tres" in question):
-            matched_cases = get_all_cases(3)
-            answer = "**Resumen de las 3 demandas anteriores:**\n\n"
-            
-            for i, case in enumerate(matched_cases, 1):
-                answer += f"{i}. **{case.get('Tipo', 'Caso legal')}**\n"
-                answer += f"   **Síntesis:** {case.get('sintesis', 'No especificada')}\n"
-                answer += f"   **Tema:** {case.get('Tema - subtema', 'No especificado')}\n"
-                answer += f"   **Fecha:** {case.get('Fecha Sentencia', 'No especificada')}\n\n"
+        # 1. Buscar casos similares usando embeddings
+        similar_cases = rag_pipeline.search_similar_cases(question, k=5)
         
-        # 3. ¿Cuál fue la sentencia del caso que habla de acoso escolar?
-        elif "acoso escolar" in question and "sentencia" in question:
-            matched_cases = search_cases_by_keyword("acoso escolar", 1)
-            
-            if matched_cases:
-                case = matched_cases[0]
-                answer = f"**Sentencia del caso de acoso escolar:**\n\n"
-                answer += f"**Tipo de caso:** {case.get('Tipo', 'Caso legal')}\n"
-                answer += f"**Providencia:** {case.get('Providencia', 'No especificada')}\n"
-                answer += f"**Resolución:** {case.get('resuelve', 'No especificada')}\n"
-                answer += f"**Fecha de sentencia:** {case.get('Fecha Sentencia', 'No especificada')}\n"
-                answer += f"**Detalles:** {case.get('sintesis', 'No especificada')}\n"
-            else:
-                answer = "No se encontraron casos específicos sobre acoso escolar en la base de datos actual."
-                matched_cases = get_all_cases(1)  # Mostrar algún caso como ejemplo
+        # 2. Generar respuesta usando RAG
+        answer = rag_pipeline.generate_answer(question, similar_cases)
         
-        # 4. ¿Diga el detalle de la demanda relacionada con acoso escolar?
-        elif "detalle" in question and "acoso escolar" in question:
-            matched_cases = search_cases_by_keyword("acoso escolar", 1)
-            
-            if matched_cases:
-                case = matched_cases[0]
-                answer = "**Detalle completo de la demanda por acoso escolar:**\n\n"
-                answer += f"**ID del caso:** {case.get('id', 'N/A')}\n"
-                answer += f"**Tipo de demanda:** {case.get('Tipo', 'No especificado')}\n"
-                answer += f"**Providencia legal:** {case.get('Providencia', 'No especificada')}\n"
-                answer += f"**Fecha de sentencia:** {case.get('Fecha Sentencia', 'No especificada')}\n"
-                answer += f"**Tema específico:** {case.get('Tema - subtema', 'No especificado')}\n"
-                answer += f"**Resolución judicial:** {case.get('resuelve', 'No especificada')}\n"
-                answer += f"**Síntesis del caso:** {case.get('sintesis', 'No especificada')}\n"
-                answer += f"**Relevancia:** {case.get('Relevancia', 'No especificada')}\n"
-            else:
-                answer = "No se encontró un caso específico de acoso escolar. Aquí hay un caso similar:\n\n"
-                matched_cases = get_all_cases(1)
-                if matched_cases:
-                    case = matched_cases[0]
-                    answer += f"**Caso disponible:** {case.get('Tipo', 'Caso legal')}\n"
-                    answer += f"**Detalles:** {case.get('sintesis', 'No especificada')}"
+        # 3. Calcular confianza basada en similitud
+        confidence = 0.8
+        if similar_cases and len(similar_cases) > 0:
+            confidence = min(0.95, similar_cases[0].get("similarity_score", 0.7))
         
-        # 5. ¿Existen casos que hablan sobre el PIAR?
-        elif "piar" in question:
-            matched_cases = search_cases_by_keyword("piar", 5)
-            
-            if matched_cases:
-                answer = f"**Casos relacionados con el PIAR (Protocolo de Inclusión y Acompañamiento):**\n\n"
-                answer += f"Se encontraron {len(matched_cases)} caso(s):\n\n"
-                
-                for i, case in enumerate(matched_cases, 1):
-                    answer += f"{i}. **{case.get('Tipo', 'Caso legal')}**\n"
-                    answer += f"   • **Providencia:** {case.get('Providencia', 'No especificada')}\n"
-                    answer += f"   • **Sentencia:** {case.get('resuelve', 'No especificada')}\n"
-                    answer += f"   • **Tema:** {case.get('Tema - subtema', 'No especificado')}\n"
-                    answer += f"   • **Resumen:** {case.get('sintesis', 'No especificada')}\n\n"
-            else:
-                answer = "No se encontraron casos específicos sobre el PIAR en la base de datos actual.\n\n"
-                answer += "**¿Qué es el PIAR?**\n"
-                answer += "El Protocolo de Inclusión y Acompañamiento (PIAR) es un documento que establece los ajustes y apoyos necesarios para estudiantes con necesidades educativas especiales."
-                matched_cases = get_all_cases(2)
-        
-        # 6. Pregunta genérica
-        else:
-            # Buscar casos relevantes
-            matched_cases = search_cases_by_keyword(question, 3)
-            
-            if matched_cases:
-                answer = f"**He encontrado {len(matched_cases)} caso(s) relevantes para tu pregunta:**\n\n"
-                
-                for i, case in enumerate(matched_cases, 1):
-                    answer += f"{i}. **{case.get('Tipo', 'Caso legal')}**\n"
-                    answer += f"   • **Resolución:** {case.get('resuelve', 'No especificada')}\n"
-                    answer += f"   • **Tema:** {case.get('Tema - subtema', 'No especificado')}\n"
-                    answer += f"   • **Fecha:** {case.get('Fecha Sentencia', 'No especificada')}\n\n"
-                
-                answer += "**¿Necesitas más detalles sobre algún caso en particular?**"
-            else:
-                answer = f"**Consulta:** '{request.question}'\n\n"
-                answer += "No encontré casos específicos para tu pregunta. Te muestro algunos casos disponibles:\n\n"
-                
-                matched_cases = get_all_cases(3)
-                for i, case in enumerate(matched_cases, 1):
-                    answer += f"{i}. **{case.get('Tipo', 'Caso legal')}**\n"
-                    answer += f"   • {case.get('sintesis', 'No especificada')}\n\n"
-                
-                answer += "**Puedes preguntar sobre:**\n"
-                answer += "• Sentencias específicas\n• Casos por tipo (difamación, acoso, etc.)\n• Detalles de providencias\n• Fechas de sentencias"
-        
-        # Asegurar lenguaje coloquial
-        answer = answer.replace("Providencia", "Documento legal")
-        answer = answer.replace("Resolución", "Resultado")
-        answer = answer.replace("Síntesis", "Resumen")
-        
-        return {
+        # 4. Preparar respuesta
+        response = {
             "answer": answer,
             "confidence": confidence,
-            "matched_cases": matched_cases,
+            "matched_cases": [
+                {
+                    "Tipo": case.get("Tipo", "Desconocido"),
+                    "Tema": case.get("Tema_subtema", "No especificado"),
+                    "Resumen": case.get("sintesis", "No especificado")[:150] + "...",
+                    "Similaridad": f"{case.get('similarity_score', 0)*100:.1f}%"
+                }
+                for case in similar_cases[:3]  # Mostrar solo top 3
+            ],
             "timestamp": datetime.now().isoformat(),
-            "total_cases_searched": len(CASES_DATA)
+            "total_cases_searched": TOTAL_CASES,
+            "rag_used": True
         }
         
+        logger.info(f" Pregunta procesada: {len(similar_cases)} casos encontrados")
+        return response
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error procesando pregunta: {e}")
+        logger.error(f" Error en query: {e}")
         raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 @app.get("/debug")
 async def debug_info():
-    """Endpoint para debugging"""
+    """Endpoint para diagnóstico"""
     return {
-        "backend_running": True,
+        "backend_status": "running",
         "python_version": sys.version,
-        "current_directory": os.getcwd(),
+        "working_directory": os.getcwd(),
         "data_file_exists": os.path.exists("data/sentencias_pasadas.xlsx"),
-        "cases_in_memory": len(CASES_DATA),
-        "sample_case": CASES_DATA[0] if CASES_DATA else None,
+        "total_cases": TOTAL_CASES,
+        "rag_initialized": rag_pipeline is not None,
+        "openai_available": rag_pipeline.openai_client is not None if rag_pipeline else False,
+        "faiss_index_size": TOTAL_CASES,
         "timestamp": datetime.now().isoformat()
     }
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("LEGAL AI ASSISTANT - BACKEND COMPLETO")
-    print("=" * 60)
-    print(f"Casos cargados: {len(CASES_DATA)}")
-    print(f"URL: http://127.0.0.1:8000")
-    print(f"Health check: http://127.0.0.1:8000/health")
-    print(f"Test: http://127.0.0.1:8000/test")
-    print(f"Debug: http://127.0.0.1:8000/debug")
-    print("=" * 60)
+    print("=" * 70)
+    print("LEGAL AI ASSISTANT - BACKEND COMPLETO V3.0")
+    print("=" * 70)
+    print(f" Casos cargados en FAISS: {TOTAL_CASES}")
+    print(f" URL API: http://127.0.0.1:8000")
+    print(f" Health check: http://127.0.0.1:8000/health")
+    print(f" Debug info: http://127.0.0.1:8000/debug")
+    print("=" * 70)
+    print("Preguntas de prueba técnica listas:")
+    print("1. ¿Cuáles son las sentencias de 3 demandas?")
+    print("2. ¿De qué se trataron las 3 demandas anteriores?")
+    print("3. ¿Cuál fue la sentencia del caso que habla de acoso escolar?")
+    print("4. ¿Diga el detalle de la demanda relacionada con acoso escolar?")
+    print("5. ¿Existen casos que hablan sobre el PIAR?")
+    print("=" * 70)
     
     uvicorn.run(
-        app, 
-        host="127.0.0.1", 
+        app,
+        host="127.0.0.1",
         port=8000,
         reload=True,
-        access_log=True
+        log_level="info"
     )

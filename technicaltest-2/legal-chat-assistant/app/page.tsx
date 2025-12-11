@@ -100,7 +100,7 @@ export default function LegalChatAssistant() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      content: '¡Hola! Soy tu asistente legal especializado. Accedo a nuestra base de datos completa de sentencias y demandas.\n\nPuedo ayudarte a consultar información sobre casos legales en lenguaje simple y claro.\n\n**Usa las preguntas de ejemplo para comenzar.**',
+      content: '¡Hola! Soy tu asistente legal especializado. Accedo a nuestra base de datos completa de sentencias y demandas.\n\nPuedo ayudarte a consultar información sobre casos legales en lenguaje simple y claro.\n\nUsa las preguntas de ejemplo para comenzar.',
       sender: 'assistant',
       timestamp: new Date()
     }
@@ -213,7 +213,7 @@ export default function LegalChatAssistant() {
       
       // Añadir estadísticas si hay casos
       if (response.matched_cases && response.matched_cases.length > 0) {
-        responseContent += `\n\n---\n**📊 Datos técnicos:**`;
+        responseContent += `\n\n\nDatos técnicos:`;
         responseContent += `\n• Casos encontrados: ${response.matched_cases.length}`;
         responseContent += `\n• Confianza: ${Math.round(response.confidence * 100)}%`;
         responseContent += `\n• Base de datos: ${response.total_cases_searched} casos disponibles`;

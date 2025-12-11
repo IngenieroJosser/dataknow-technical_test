@@ -9,64 +9,81 @@ class DocumentProcessor:
     def __init__(self, rag_pipeline: LegalRAGPipeline):
         self.rag_pipeline = rag_pipeline
     
-    def process_excel_file(self, file_path: str):
+    def process_excel_file(self, file_path: str = "data/sentencias_pasadas.xlsx") -> int:
         """
-        Process an Excel file containing legal cases and add them to the vector database.
-        
-        Expected Excel columns:
-        - caso_id: Unique case identifier
-        - descripcion: Case description
-        - tipo: Type of case (e.g., 'difamacion', 'acoso_escolar')
-        - sentencia: Final sentence/outcome
-        - plataforma: Social media platform involved
-        - fecha: Date of sentence
+        Procesa el archivo Excel con el formato REAL de columnas:
+        - Relevancia, Providencia, Tipo, Fecha Sentencia, Tema - subtema, resuelve, sintesis
         """
         try:
-            # Read Excel file
+            # Leer Excel
             df = pd.read_excel(file_path)
-            logger.info(f"Loaded Excel file with {len(df)} cases")
+            logger.info(f" Excel cargado: {len(df)} casos encontrados")
             
-            # Process each case
+            # Verificar columnas necesarias
+            required_columns = ['Tipo', 'resuelve', 'sintesis']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                logger.warning(f"Columnas faltantes: {missing_columns}")
+            
+            # Procesar cada caso
             cases_added = 0
-            for _, row in df.iterrows():
-                # Create case text for embedding
-                case_text = self._create_case_text(row)
-                
-                # Create metadata
-                metadata = {
-                    "caso_id": str(row.get('caso_id', '')),
-                    "tipo": str(row.get('tipo', '')),
-                    "sentencia": str(row.get('sentencia', '')),
-                    "plataforma": str(row.get('plataforma', '')),
-                    "fecha": str(row.get('fecha', '')),
-                    "descripcion": str(row.get('descripcion', ''))[:100]  # Truncate if too long
-                }
-                
-                # Add to vector database
-                self.rag_pipeline.add_case(case_text, metadata)
-                cases_added += 1
+            for idx, row in df.iterrows():
+                try:
+                    # Crear texto para embedding
+                    case_text = self._create_case_text(row)
+                    
+                    # Crear metadatos con nombres de columnas CORRECTOS
+                    metadata = {
+                        "id": idx + 1,
+                        "Relevancia": str(row.get('Relevancia', 'No especificado')),
+                        "Providencia": str(row.get('Providencia', 'No especificado')),
+                        "Tipo": str(row.get('Tipo', 'No especificado')),
+                        "Fecha Sentencia": str(row.get('Fecha Sentencia', 'No especificada')),
+                        "Tema_subtema": str(row.get('Tema - subtema', 'No especificado')),
+                        "resuelve": str(row.get('resuelve', 'No especificada')),
+                        "sintesis": str(row.get('sintesis', 'No especificada'))
+                    }
+                    
+                    # Añadir al pipeline RAG
+                    self.rag_pipeline.add_case(case_text, metadata)
+                    cases_added += 1
+                    
+                except Exception as case_error:
+                    logger.error(f"Error procesando caso {idx}: {case_error}")
+                    continue
             
-            logger.info(f"Successfully added {cases_added} cases to the database")
+            logger.info(f" {cases_added} casos agregados a la base de datos vectorial")
             return cases_added
             
+        except FileNotFoundError:
+            logger.error(f" Archivo no encontrado: {file_path}")
+            raise
         except Exception as e:
-            logger.error(f"Error processing Excel file: {str(e)}")
+            logger.error(f" Error procesando Excel: {e}")
             raise
     
     def _create_case_text(self, row) -> str:
-        """Create a comprehensive text representation of a case for embedding."""
+        """Crea texto completo del caso para embedding"""
         parts = []
         
-        if pd.notna(row.get('descripcion')):
-            parts.append(f"Descripción: {row['descripcion']}")
+        # Usar las columnas REALES del Excel
+        if pd.notna(row.get('Tipo')):
+            parts.append(f"Tipo de demanda: {row['Tipo']}")
         
-        if pd.notna(row.get('tipo')):
-            parts.append(f"Tipo de demanda: {row['tipo']}")
+        if pd.notna(row.get('Tema - subtema')):
+            parts.append(f"Tema: {row['Tema - subtema']}")
         
-        if pd.notna(row.get('sentencia')):
-            parts.append(f"Sentencia: {row['sentencia']}")
+        if pd.notna(row.get('resuelve')):
+            parts.append(f"Resolución: {row['resuelve']}")
         
-        if pd.notna(row.get('plataforma')):
-            parts.append(f"Plataforma: {row['plataforma']}")
+        if pd.notna(row.get('sintesis')):
+            parts.append(f"Resumen: {row['sintesis']}")
+        
+        if pd.notna(row.get('Providencia')):
+            parts.append(f"Documento legal: {row['Providencia']}")
+        
+        if pd.notna(row.get('Fecha Sentencia')):
+            parts.append(f"Fecha: {row['Fecha Sentencia']}")
         
         return " | ".join(parts)
