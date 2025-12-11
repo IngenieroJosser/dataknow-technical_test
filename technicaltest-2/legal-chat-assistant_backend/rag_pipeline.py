@@ -1,5 +1,5 @@
 import chromadb
-from sentence_transformers import SentenceTransformer  # pyright: ignore[reportMissingImports]
+from sentence_transformers import SentenceTransformer
 import openai
 from typing import List, Tuple, Optional
 import logging
@@ -15,9 +15,9 @@ class LegalRAGPipeline:
         
         # Initialize ChromaDB Cloud client with your credentials
         self.chroma_client = chromadb.CloudClient(
-            api_key='ck-Fpz14mkbGtacdiL9wo96USuGL7CNNohV4yjXPQn3qvH3',  # Your actual key
-            tenant='b8b3aedb-9c88-4604-9137-4062a4d9e21b',  # Your tenant ID
-            database='dataknow-technical_test'  # Your database name
+            api_key=os.getenv("CHROMADB_API_KEY"),
+            tenant=os.getenv("CHROMADB_TENANT"),
+            database=os.getenv("CHROMADB_DATABASE")
         )
         
         # Get or create the collection for legal cases

@@ -137,15 +137,23 @@ export default function LegalChatAssistant() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f7f7]">
-      {/* Minimal background */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+    <div className="min-h-screen bg-[#f7f7f7] relative">
+      {/* Background image with overlay */}
+      <div className="fixed inset-0 z-0">
+        <div 
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-10"
+          style={{ backgroundImage: 'url(/imagotipo-principal-sindescriptor.webp)' }}
+        />
         <div className="absolute inset-0 bg-gradient-to-br from-[#3e32a9]/5 to-[#46a8b9]/5" />
-        <div className="absolute top-1/4 left-1/4 w-64 h-64 rounded-full bg-[#3e32a9]/10 blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-64 h-64 rounded-full bg-[#46a8b9]/10 blur-3xl" />
       </div>
 
-      <div className="relative max-w-7xl mx-auto p-4 md:p-8">
+      {/* Additional decorative elements */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+        <div className="absolute top-1/4 left-1/4 w-64 h-64 rounded-full bg-[#3e32a9]/5 blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-64 h-64 rounded-full bg-[#46a8b9]/5 blur-3xl" />
+      </div>
+
+      <div className="relative max-w-7xl mx-auto p-4 md:p-8 z-10">
         {/* Professional Header */}
         <motion.header 
           className="mb-8"
@@ -155,14 +163,18 @@ export default function LegalChatAssistant() {
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              {/* Logo */}
+              {/* Logo with image */}
               <motion.div 
                 className="relative"
                 whileHover={{ scale: 1.05 }}
                 transition={{ type: "spring", stiffness: 300 }}
               >
-                <div className="w-12 h-12 rounded-lg bg-white border border-gray-200 shadow-sm flex items-center justify-center">
-                  <div className="text-[#3e32a9] font-semibold text-lg">L</div>
+                <div className="w-12 h-12 rounded-lg bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm flex items-center justify-center overflow-hidden">
+                  <img 
+                    src="/imagotipo-principal-sindescriptor.webp" 
+                    alt="Logo Legal AI"
+                    className="w-full h-full object-contain p-1"
+                  />
                 </div>
               </motion.div>
               
@@ -173,7 +185,7 @@ export default function LegalChatAssistant() {
             </div>
             
             <div className="hidden md:flex items-center gap-3">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-gray-200">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/90 backdrop-blur-sm border border-gray-200">
                 <div className="w-2 h-2 rounded-full bg-green-500" />
                 <span className="text-sm font-medium text-gray-700">Sistema activo</span>
               </div>
@@ -190,7 +202,7 @@ export default function LegalChatAssistant() {
             transition={{ duration: 0.5, delay: 0.1 }}
           >
             {/* Cases Panel */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl border border-gray-200 shadow-sm p-5">
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 rounded-lg bg-[#3e32a9]/10">
                   <Layers className="w-5 h-5 text-[#3e32a9]" />
@@ -309,7 +321,7 @@ export default function LegalChatAssistant() {
             transition={{ duration: 0.5, delay: 0.2 }}
           >
             {/* Chat Container */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex-1 flex flex-col overflow-hidden">
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl border border-gray-200 shadow-sm flex-1 flex flex-col overflow-hidden">
               {/* Chat Header */}
               <div className="p-6 border-b border-gray-200">
                 <div className="flex items-center gap-4">
@@ -462,9 +474,18 @@ export default function LegalChatAssistant() {
           transition={{ duration: 0.5, delay: 0.3 }}
         >
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div>
-              <p className="text-gray-700 font-medium">Asistente Legal AI • Prueba de Concepto</p>
-              <p className="text-gray-500 text-sm">Consultoría legal automatizada con IA generativa</p>
+            <div className="flex items-center gap-4">
+              <div className="w-8 h-8 rounded-lg bg-white/90 backdrop-blur-sm border border-gray-200 shadow-sm flex items-center justify-center overflow-hidden">
+                <img 
+                  src="/imagotipo-principal-sindescriptor.webp" 
+                  alt="Logo"
+                  className="w-full h-full object-contain p-1"
+                />
+              </div>
+              <div>
+                <p className="text-gray-700 font-medium">Asistente Legal AI • Prueba de Concepto</p>
+                <p className="text-gray-500 text-sm">Consultoría legal automatizada con IA generativa</p>
+              </div>
             </div>
             
             <div className="flex items-center gap-4">
