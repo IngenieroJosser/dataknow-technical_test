@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { Stack_Sans_Headline, Manrope } from "next/font/google";
+import { Plus_Jakarta_Sans, Schibsted_Grotesk} from "next/font/google";
 import "./globals.css";
 
-const settingsFont = Manrope({
+const settingsFont = Schibsted_Grotesk({
   variable: "--font-setting",
   subsets: ["latin"],
 });
