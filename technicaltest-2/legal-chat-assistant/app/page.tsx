@@ -140,7 +140,7 @@ export default function LegalChatAssistant() {
       setBackendStatus({
         connected: true,
         loading: false,
-        message: `✅ Conectado - ${health.cases_loaded} casos cargados`,
+        message: `Conectado - ${health.cases_loaded} casos cargados`,
         casesLoaded: health.cases_loaded
       });
       
@@ -152,7 +152,7 @@ export default function LegalChatAssistant() {
         })));
       }
       
-      console.log('✅ Backend conectado:', health);
+      console.log('Backend conectado:', health);
       
     } catch (error) {
       const apiError = error as ApiError;
@@ -352,7 +352,7 @@ export default function LegalChatAssistant() {
               }`}>
                 <div className={`w-2 h-2 rounded-full ${backendStatus.connected ? 'bg-green-500' : 'bg-yellow-500'}`} />
                 <span className="text-sm font-medium">
-                  {backendStatus.connected ? '✅ Conectado' : '⚠️ Verificando...'}
+                  {backendStatus.connected ? 'Conectado' : 'Verificando...'}
                 </span>
               </div>
               
@@ -482,7 +482,7 @@ export default function LegalChatAssistant() {
                     <div className="flex items-center gap-2 text-green-700">
                       <CheckCircle className="w-4 h-4" />
                       <p className="text-sm">
-                        <strong>✅ Sistema listo</strong><br />
+                        <strong>Sistema listo</strong><br />
                         Respuestas basadas en datos reales del Excel
                       </p>
                     </div>
@@ -603,7 +603,7 @@ export default function LegalChatAssistant() {
                         Prueba Técnica
                       </div>
                       <div className="text-xs text-gray-500">
-                        {backendStatus.connected ? '✅ Datos reales' : '⚠️ Datos de ejemplo'}
+                        {backendStatus.connected ? 'Datos reales' : 'Datos de ejemplo'}
                       </div>
                     </div>
                   </div>
@@ -782,8 +782,8 @@ export default function LegalChatAssistant() {
                         }`} />
                         <span>
                           {backendStatus.connected 
-                            ? `✅ Conectado (${backendStatus.casesLoaded || 0} casos)` 
-                            : '⚠️ Sin conexión al backend'}
+                            ? `Conectado (${backendStatus.casesLoaded || 0} casos)` 
+                            : 'Sin conexión al backend'}
                         </span>
                       </div>
                     </div>
@@ -794,7 +794,7 @@ export default function LegalChatAssistant() {
                       </div>
                       
                       <div className="text-xs">
-                        {backendStatus.connected ? '🔍 Búsqueda en tiempo real' : '📚 Usando datos de ejemplo'}
+                        {backendStatus.connected ? 'Búsqueda en tiempo real' : 'Usando datos de ejemplo'}
                       </div>
                     </div>
                   </div>
@@ -817,7 +817,7 @@ export default function LegalChatAssistant() {
                 <Scale className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="text-gray-700 font-medium">Asistente Legal AI • Prueba Técnica v2.0</p>
+                <p className="text-gray-700 font-medium">Asistente Legal AI • Prueba Técnica v1.0</p>
                 <p className="text-gray-500 text-sm">
                   {backendStatus.connected 
                     ? 'Sistema completo: Consulta de sentencias legales con IA' 
