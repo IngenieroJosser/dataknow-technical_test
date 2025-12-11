@@ -1,133 +1,111 @@
-import axios, { AxiosRequestConfig, Method } from "axios";
+import axios, { AxiosError } from 'axios';
 
-export interface ApiErrorResponse {
+export interface ApiResponse<T = any> {
+  data: T;
+  status: number;
+  statusText: string;
+}
+
+export interface ApiError {
   message: string;
-  statusCode: number;
-  error?: string;
+  status?: number;
   details?: any;
 }
 
-
+// Función simple de conexión sin autenticación
 export const apiRequest = async <T>(
-  method: Method,
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   endpoint: string,
-  data?: any,
-  config?: AxiosRequestConfig
+  data?: any
 ): Promise<T> => {
+  const baseUrl = 'http://127.0.0.1:8000';
+  const url = `${baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  
+  console.log(`🌐 Enviando ${method} a: ${url}`);
+  
   try {
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3001";
-
-    // Asegurarse de que el endpoint comience con /
-    let formattedEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-
-    // Normalizar URLs
-    const normalizedBase = baseUrl.replace(/\/+$/, "");
-    const fullUrl = `${normalizedBase}${formattedEndpoint}`;
-
-    console.log("🌐 Making API request:", {
+    const config = {
       method,
-      url: fullUrl,
-      hasData: !!data,
-      hasToken: !!token
-    });
-
-    // Detectar si es FormData
-    const isFormData = data instanceof FormData;
-
-    // Headers básicos
-    const headers: Record<string, string> = {
-      "Accept": "application/json",
-    };
-
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-
-    // Content-Type solo si no es FormData
-    if (!isFormData && method !== "GET" && method !== "DELETE") {
-      headers["Content-Type"] = "application/json";
-    }
-
-    // Combinar con headers adicionales
-    if (config?.headers) {
-      Object.assign(headers, config.headers);
-    }
-
-    const response = await axios({
-      method,
-      url: fullUrl,
-      data: !isFormData && data ? JSON.stringify(data) : data,
-      headers,
-      timeout: 30000, // 30 segundos de timeout
-      validateStatus: (status) => status >= 200 && status < 500, // Aceptar respuestas 4xx como no excepciones
-      ...config,
-    });
-
-    // Si la respuesta es un error, lanzar excepción
-    if (response.status >= 400) {
-      const errorData: ApiErrorResponse = {
-        message: response.data?.message || `Error ${response.status}`,
-        statusCode: response.status,
-        error: response.data?.error,
-        details: response.data
-      };
-
-      console.error("❌ API Error Response:", {
-        status: response.status,
-        statusText: response.statusText,
-        data: response.data,
-        url: fullUrl,
-        method
-      });
-
-      throw errorData;
-    }
-
-    return response.data as T;
-  } catch (error: any) {
-    console.error("❌ API Request Failed:", {
-      name: error.name,
-      message: error.message,
-      code: error.code,
-      stack: error.stack,
-      config: {
-        url: error.config?.url,
-        method: error.config?.method,
-        data: error.config?.data,
-        headers: error.config?.headers
+      url,
+      data: method === 'POST' || method === 'PUT' ? data : undefined,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
       },
-      response: {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data
-      }
+      timeout: 10000, // 10 segundos
+    };
+    
+    const response = await axios(config);
+    console.log(`✅ Respuesta recibida de ${url}:`, response.status);
+    
+    return response.data;
+    
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    
+    console.error(`❌ Error en ${method} ${url}:`, {
+      message: axiosError.message,
+      code: axiosError.code,
+      status: axiosError.response?.status,
+      data: axiosError.response?.data,
     });
-
-    // Manejo de errores HTTP
-    if (error.response) {
-      const status = error.response.status;
-
-      if (status === 400) {
-        throw new Error(error.response.data?.message || "Solicitud incorrecta. Verifica los datos enviados.");
-      } else if (status === 401) {
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("token");
-          window.location.href = "/login";
-        }
-        throw new Error("No autorizado. Por favor, inicia sesión nuevamente.");
-      } else if (status === 403) {
-        throw new Error("No tienes permisos para realizar esta acción.");
-      } else if (status === 404) {
-        throw new Error("Recurso no encontrado.");
-      } else if (status >= 500) {
-        throw new Error("Error interno del servidor. Por favor, intenta más tarde.");
-      } else {
-        throw new Error(error.response.data?.message || `Error ${status}: ${error.response.statusText}`);
-      }
-    } else if (error.request) {
-      throw new Error("No se pudo conectar con el servidor. Verifica tu conexión a internet.");
-    } else {
-      throw new Error(error.message || "Error inesperado al realizar la solicitud.");
+    
+    // Errores específicos
+    if (axiosError.code === 'ECONNABORTED') {
+      throw {
+        message: 'El servidor tardó demasiado en responder. Verifica que el backend esté corriendo.',
+        status: 408,
+        details: { url, method }
+      } as ApiError;
     }
+    
+    if (!axiosError.response) {
+      throw {
+        message: 'No se puede conectar al servidor. Asegúrate de que el backend esté ejecutándose en http://127.0.0.1:8000',
+        status: 0,
+        details: { url, method }
+      } as ApiError;
+    }
+    
+    // Error HTTP
+    throw {
+      message: axiosError.response.data || axiosError.response.data || `Error ${axiosError.response.status}`,
+      status: axiosError.response.status,
+      details: axiosError.response.data
+    } as ApiError;
   }
 };
 
+// Función específica para consultas legales
+export const queryLegalAssistant = async (question: string) => {
+  return apiRequest<{
+    answer: string;
+    confidence: number;
+    matched_cases: any[];
+    timestamp: string;
+    total_cases_searched: number;
+  }>('POST', '/query', { question });
+};
+
+// Función para verificar salud del backend
+export const checkBackendHealth = async () => {
+  return apiRequest<{
+    status: string;
+    service: string;
+    timestamp: string;
+    cases_loaded: number;
+    version: string;
+  }>('GET', '/health');
+};
+
+// Función para debugging
+export const debugBackend = async () => {
+  return apiRequest<{
+    backend_running: boolean;
+    python_version: string;
+    data_file_exists: boolean;
+    cases_in_memory: number;
+    sample_case: any;
+    timestamp: string;
+  }>('GET', '/debug');
+};
