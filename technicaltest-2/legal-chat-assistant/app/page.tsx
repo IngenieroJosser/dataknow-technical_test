@@ -19,7 +19,6 @@ import {
   Clock,
   Layers
 } from 'lucide-react';
-import Image from 'next/image';
 
 interface Message {
   id: string;
@@ -81,28 +80,13 @@ export default function LegalChatAssistant() {
     }
   ];
 
-  // Animation variants - TypeScript compatible
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1
-      }
-    }
-  };
-
-  const itemVariants = {
-    hidden: { y: 20, opacity: 0 },
-    visible: {
-      y: 0,
-      opacity: 1,
-      transition: {
-        type: "spring" as const,
-        stiffness: 100,
-        damping: 10
-      }
-    }
+  // Función para formatear hora consistentemente
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
   };
 
   // Mock API response
@@ -372,7 +356,7 @@ export default function LegalChatAssistant() {
                         <div className={`text-xs mt-3 ${
                           message.sender === 'user' ? 'text-white/70' : 'text-gray-500'
                         }`}>
-                          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {formatTime(message.timestamp)}
                         </div>
                       </div>
                       

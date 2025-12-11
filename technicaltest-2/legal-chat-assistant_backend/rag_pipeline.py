@@ -1,42 +1,71 @@
-from langchain_community.vectorstores import Chroma  # En lugar de langchain_chroma
-from langchain_community.embeddings import OpenAIEmbeddings  # En lugar de langchain_openai
-from langchain_community.embeddings import SentenceTransformerEmbeddings
-from langchain.chains import RetrievalQA  # Esta debería funcionar si tienes langchain instalado
-from langchain_core.prompts import PromptTemplate
-from langchain_core.documents import Document
-from langchain_community.llms import FakeListLLM
-from langchain_openai import ChatOpenAI  # Mantén esta si usas OpenAI
-
 import os
-from typing import List, Dict
-import json
+import sys
+from typing import List, Dict, Any
+
+# Configurar importaciones seguras
+try:
+    from langchain.vectorstores import Chroma
+    from langchain.embeddings import HuggingFaceEmbeddings
+    from langchain.chains import RetrievalQA
+    from langchain.prompts import PromptTemplate
+    from langchain.schema import Document
+    from langchain.llms import FakeListLLM
+    from langchain.chat_models import ChatOpenAI
+    
+    print("Importaciones LangChain estándar exitosas")
+    IMPORT_MODE = "standard"
+    
+except ImportError:
+    try:
+        from langchain_community.vectorstores import Chroma
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+        from langchain.chains import RetrievalQA
+        from langchain.prompts import PromptTemplate
+        from langchain_core.documents import Document
+        from langchain_community.llms import FakeListLLM
+        from langchain_openai import ChatOpenAI
+        
+        print("Importaciones LangChain comunidad exitosas")
+        IMPORT_MODE = "community"
+        
+    except ImportError as e:
+        print(f"Error crítico de importación: {e}")
+        print("Ejecuta: pip install langchain==0.1.17 langchain-community==0.0.28")
+        sys.exit(1)
 
 class LegalRAGPipeline:
     def __init__(self, use_local_embeddings=True):
-        # Configuration
+        # Configuración
         self.persist_directory = "./chroma_db"
         self.collection_name = "legal_cases"
+        self.use_local_embeddings = use_local_embeddings
         
-        # Choose embeddings based on configuration
+        # Elegir embeddings basados en configuración
         if use_local_embeddings:
-            self.embeddings = SentenceTransformerEmbeddings(
-                model_name="sentence-transformers/all-MiniLM-L6-v2"
+            print("Usando embeddings locales (Sentence Transformers)")
+            self.embeddings = HuggingFaceEmbeddings(
+                model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+                model_kwargs={'device': 'cpu'},
+                encode_kwargs={'normalize_embeddings': True}
             )
         else:
-            # Using OpenAI embeddings (requires API key)
+            # Usar embeddings de OpenAI (requiere API key)
+            print("Usando embeddings de OpenAI")
+            from langchain.embeddings import OpenAIEmbeddings
             self.embeddings = OpenAIEmbeddings()
         
-        # Initialize vector store
+        # Inicializar almacén vectorial y cadena QA
         self.vectorstore = None
         self.qa_chain = None
+        self.retriever = None
         
     def initialize_from_documents(self, documents: List[Document]):
         """
-        Create vector store from processed documents
+        Crear almacén vectorial desde documentos procesados
         """
-        print(f"Creating vector store from {len(documents)} documents...")
+        print(f"Creando almacén vectorial desde {len(documents)} documentos...")
         
-        # Create Chroma vector store
+        # Crear almacén vectorial Chroma
         self.vectorstore = Chroma.from_documents(
             documents=documents,
             embedding=self.embeddings,
@@ -44,32 +73,45 @@ class LegalRAGPipeline:
             collection_name=self.collection_name
         )
         
-        # Persist to disk
+        # Persistir en disco
         self.vectorstore.persist()
+        print(f"Almacén vectorial guardado en: {self.persist_directory}")
         
-        # Initialize QA chain
+        # Crear recuperador
+        self.retriever = self.vectorstore.as_retriever(
+            search_kwargs={
+                "k": 5,  # Recuperar top 5 documentos relevantes
+                "score_threshold": 0.3  # Umbral de similitud mínimo
+            }
+        )
+        
+        # Inicializar cadena QA
         self._initialize_qa_chain()
         
-        print("Vector store created and QA chain initialized")
+        print("Almacén vectorial creado y cadena QA inicializada")
+        return True
     
     def _initialize_qa_chain(self):
         """
-        Initialize the QA chain with legal-specific prompt
+        Inicializar la cadena QA con prompt específico legal
         """
-        # Legal-specific prompt template
-        prompt_template = """
-        Eres un asistente legal especializado en consulta de historial de demandas.
-        Tu tarea es responder preguntas sobre casos legales usando SOLO la información proporcionada.
+        # Plantilla de prompt específica para asesoría legal
+        prompt_template = """Eres un asistente legal especializado en consulta de historial de demandas.
         
-        Responde en un lenguaje coloquial y sencillo, para personas sin conocimientos de derecho.
-        Si no encuentras información suficiente, di que no tienes esa información.
-        
-        Información de contexto:
+        CONTEXTO (casos legales relevantes):
         {context}
         
-        Pregunta: {question}
+        PREGUNTA DEL USUARIO:
+        {question}
         
-        Respuesta clara y sencilla:
+        INSTRUCCIONES IMPORTANTES:
+        1. Responde SOLO con la información proporcionada en el contexto
+        2. Usa lenguaje coloquial y sencillo (para personas sin conocimientos de derecho)
+        3. Sé claro, directo y útil
+        4. Si no hay información suficiente, di: "No tengo información sobre este caso en la base de datos"
+        5. Si hay varios casos relevantes, menciona los principales
+        
+        RESPUESTA (en español, lenguaje natural y amigable):
         """
         
         PROMPT = PromptTemplate(
@@ -77,85 +119,143 @@ class LegalRAGPipeline:
             input_variables=["context", "question"]
         )
         
-        # Initialize LLM (configure based on available API)
-        # Option 1: OpenAI GPT
-        # llm = ChatOpenAI(model_name="gpt-4", temperature=0.1)
+        # Inicializar LLM (modo prueba)
+        print("Inicializando LLM (modo prueba con FakeListLLM)")
         
-        # Option 2: Local LLM (using Ollama, GPT4All, etc.)
-        # from langchain.llms import Ollama
-        # llm = Ollama(model="llama2")
+        # Respuestas de prueba para demostración
+        demo_responses = [
+            "Basándome en los casos de la base de datos, aquí está la información relevante:",
+            "Según los registros legales que tengo disponibles, puedo indicarte que:",
+            "En los casos almacenados en el sistema, se encontró la siguiente información:",
+            "No tengo información específica sobre este caso en la base de datos actual."
+        ]
         
-        # For this example, using a simple implementation
-        from langchain_community.llms import FakeListLLM
-        llm = FakeListLLM(responses=["I'm a placeholder LLM. In production, connect to real LLM."])
-        
-        # Create retriever
-        retriever = self.vectorstore.as_retriever(
-            search_kwargs={"k": 4}  # Retrieve top 4 relevant documents
+        llm = FakeListLLM(
+            responses=demo_responses,
+            verbose=True
         )
         
-        # Create QA chain
+        """
+        # PARA PRODUCCIÓN (descomentar y configurar API key):
+        # from langchain_openai import ChatOpenAI
+        # llm = ChatOpenAI(
+        #     model="gpt-4",
+        #     temperature=0.1,
+        #     openai_api_key=os.getenv("OPENAI_API_KEY")
+        # )
+        """
+        
+        # Crear cadena QA de recuperación
         self.qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
-            retriever=retriever,
-            chain_type_kwargs={"prompt": PROMPT},
-            return_source_documents=True
+            retriever=self.retriever,
+            chain_type_kwargs={
+                "prompt": PROMPT,
+                "document_variable_name": "context"
+            },
+            return_source_documents=True,
+            verbose=True
         )
+        
+        print("Cadena QA configurada correctamente")
     
-    def query(self, question: str, conversation_history=None) -> Dict:
+    def query(self, question: str, conversation_history=None) -> Dict[str, Any]:
         """
-        Query the RAG pipeline with a legal question
+        Consultar el pipeline RAG con una pregunta legal
+        
+        Args:
+            question: Pregunta en lenguaje natural
+            conversation_history: Historial de conversación (opcional)
+            
+        Returns:
+            Dict con respuesta, fuentes y confianza
         """
-        if not self.qa_chain:
+        if not self.qa_chain or not self.vectorstore:
             return {
-                "answer": "El sistema no ha sido inicializado con documentos. Por favor, ingiere documentos primero.",
+                "answer": "El sistema no ha sido inicializado. Por favor, ejecuta primero la ingestión de documentos.",
                 "sources": [],
-                "confidence": 0.0
+                "confidence": 0.0,
+                "status": "not_initialized"
             }
         
         try:
-            # Format question based on conversation history
+            print(f"Procesando pregunta: '{question}'")
+            
+            # Formatear pregunta con historial si existe
             formatted_question = self._format_question(question, conversation_history)
             
-            # Get response from QA chain
+            # Buscar documentos similares primero
+            similar_docs = self.retriever.get_relevant_documents(formatted_question)
+            print(f"Documentos similares encontrados: {len(similar_docs)}")
+            
+            # Obtener respuesta de la cadena QA
             result = self.qa_chain({"query": formatted_question})
             
-            # Extract source information
+            # Extraer información de fuentes
             sources = []
-            if hasattr(result, 'source_documents'):
-                for doc in result['source_documents'][:3]:  # Top 3 sources
+            if 'source_documents' in result:
+                for doc in result['source_documents'][:3]:  # Top 3 fuentes
                     sources.append({
-                        "title": doc.metadata.get("title", "Sin título"),
                         "case_id": doc.metadata.get("case_id", "N/A"),
-                        "category": doc.metadata.get("category", "N/A")
+                        "title": doc.metadata.get("title", "Sin título"),
+                        "category": doc.metadata.get("category", "General"),
+                        "date": doc.metadata.get("date", ""),
+                        "snippet": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content
                     })
+            
+            # Calcular confianza aproximada basada en número de fuentes
+            confidence = min(0.3 + (len(sources) * 0.2), 0.9) if sources else 0.1
             
             return {
                 "answer": result['result'],
                 "sources": sources,
-                "confidence": 0.85  # Placeholder - in production, calculate actual confidence
+                "confidence": confidence,
+                "documents_found": len(similar_docs),
+                "status": "success"
             }
             
         except Exception as e:
+            print(f"Error en query: {str(e)}")
             return {
-                "answer": f"Error procesando la consulta: {str(e)}",
+                "answer": f"Lo siento, hubo un error procesando tu consulta: {str(e)}",
                 "sources": [],
-                "confidence": 0.0
+                "confidence": 0.0,
+                "status": "error",
+                "error": str(e)
             }
     
     def _format_question(self, question: str, history=None) -> str:
         """
-        Format question with context from conversation history
+        Formatear pregunta con contexto del historial de conversación
         """
         if not history or len(history) < 2:
             return question
         
-        # Add last 2 exchanges for context
-        context_parts = []
+        # Añadir últimos 2 intercambios para contexto
+        context_parts = ["Conversación anterior:"]
         for exchange in history[-2:]:
             role = "Usuario" if exchange.get("role") == "user" else "Asistente"
             context_parts.append(f"{role}: {exchange.get('content', '')}")
         
         context = "\n".join(context_parts)
-        return f"Contexto de conversación anterior:\n{context}\n\nNueva pregunta: {question}"
+        return f"{context}\n\nNueva pregunta: {question}"
+    
+    def get_vectorstore_info(self):
+        """Obtener información sobre el almacén vectorial"""
+        if not self.vectorstore:
+            return {"status": "not_initialized"}
+        
+        try:
+            # Obtener conteo de documentos
+            collection = self.vectorstore._collection
+            count = collection.count() if hasattr(collection, 'count') else "N/A"
+            
+            return {
+                "status": "initialized",
+                "document_count": count,
+                "embedding_model": "SentenceTransformer (multilingual)" if self.use_local_embeddings else "OpenAI",
+                "persist_directory": self.persist_directory
+            }
+        except:
+            return {"status": "initialized", "details": "available"}

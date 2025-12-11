@@ -1,74 +1,104 @@
-from langchain_text_splitters import RecursiveCharacterTextSplitter # Was: langchain.text_splitter
-from langchain_core.documents import Document # Handles Document schema
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.schema import Document
+
 import pandas as pd
-from typing import List, Dict
+from typing import List, Dict, Any
 import json
 
 class LegalDocumentProcessor:
-    def __init__(self):
+    def __init__(self, chunk_size=800, chunk_overlap=150):
+        """
+        Inicializar procesador de documentos legales
+        
+        Args:
+            chunk_size: Tamaño de fragmentos de texto
+            chunk_overlap: Superposición entre fragmentos
+        """
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
-            separators=["\n\n", "\n", ". ", " ", ""]
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            separators=["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " "],
+            length_function=len,
         )
     
-    def process_excel_file(self, file_path: str) -> Dict:
+    def process_excel_file(self, file_path: str) -> Dict[str, Any]:
         """
-        Process Excel file with legal cases
-        Expected columns: CaseID, Title, Description, Sentence, Category, Date, etc.
+        Procesar archivo Excel con casos legales
+        
+        Columnas esperadas:
+        - CaseID: Identificador único del caso
+        - Title: Título del caso
+        - Description: Descripción detallada
+        - Sentence: Sentencia o resolución
+        - Category: Categoría (Redes Sociales, Educación, etc.)
+        - Date: Fecha del caso
+        - Details: Detalles adicionales (opcional)
         """
         try:
-            # Read Excel file
+            print(f"Leyendo archivo Excel: {file_path}")
+            
+            # Leer archivo Excel
             df = pd.read_excel(file_path)
-            print(f"Loaded {len(df)} cases from Excel")
+            print(f"Cargados {len(df)} casos desde Excel")
+            
+            # Mostrar estructura del archivo
+            print(f"Columnas disponibles: {list(df.columns)}")
+            print(f"Primeros casos:\n{df.head()}")
             
             documents = []
             
-            # Convert each row to document
-            for _, row in df.iterrows():
-                # Create comprehensive text
+            # Convertir cada fila a documento
+            for idx, row in df.iterrows():
+                # Crear texto comprehensivo del caso
                 case_text = f"""
-                DEMANDA: {row.get('Title', 'Sin título')}
-                ID del caso: {row.get('CaseID', 'N/A')}
-                Fecha: {row.get('Date', 'N/A')}
-                Categoría: {row.get('Category', 'N/A')}
+                DEMANDA LEGAL
                 
-                DESCRIPCIÓN:
+                TÍTULO: {row.get('Title', 'Sin título')}
+                ID: {row.get('CaseID', f'CASE-{idx:03d}')}
+                FECHA: {row.get('Date', 'No especificada')}
+                CATEGORÍA: {row.get('Category', 'General')}
+                
+                DESCRIPCIÓN DEL CASO:
                 {row.get('Description', 'No hay descripción disponible.')}
                 
-                SENTENCIA:
+                SENTENCIA O RESOLUCIÓN:
                 {row.get('Sentence', 'No hay sentencia registrada.')}
                 
                 DETALLES ADICIONALES:
                 {row.get('Details', 'No hay detalles adicionales.')}
                 """
                 
-                # Create metadata
+                # Crear metadatos
                 metadata = {
-                    "case_id": str(row.get('CaseID', '')),
-                    "title": str(row.get('Title', '')),
-                    "category": str(row.get('Category', '')),
+                    "case_id": str(row.get('CaseID', f'CASE-{idx:03d}')),
+                    "title": str(row.get('Title', 'Sin título')),
+                    "category": str(row.get('Category', 'General')),
                     "date": str(row.get('Date', '')),
-                    "sentence": str(row.get('Sentence', '')),
-                    "source": "excel_database"
+                    "sentence_summary": str(row.get('Sentence', '')),
+                    "source": "excel_database",
+                    "row_index": idx
                 }
                 
-                # Create LangChain document
+                # Crear documento LangChain
                 doc = Document(
-                    page_content=case_text,
+                    page_content=case_text.strip(),
                     metadata=metadata
                 )
                 documents.append(doc)
             
-            # Split documents into chunks
+            # Fragmentar documentos en chunks
+            print(f"Fragmentando {len(documents)} documentos...")
             split_docs = self.text_splitter.split_documents(documents)
-            print(f"Split into {len(split_docs)} document chunks")
+            print(f"Fragmentados en {len(split_docs)} chunks de texto")
             
             return {
                 "documents": split_docs,
                 "count": len(split_docs),
-                "original_cases": len(df)
+                "original_cases": len(df),
+                "columns": list(df.columns)
             }
             
+        except FileNotFoundError:
+            raise Exception(f"Archivo no encontrado: {file_path}")
         except Exception as e:
-            raise Exception(f"Error processing Excel file: {str(e)}")
+            raise Exception(f"Error procesando archivo Excel: {str(e)}")
