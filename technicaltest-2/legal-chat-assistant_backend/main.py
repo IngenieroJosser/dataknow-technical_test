@@ -22,9 +22,9 @@ try:
     from rag_pipeline import LegalRAGPipeline
     from document_processor import DocumentProcessor
     RAG_AVAILABLE = True
-    logger.info("✅ Módulos RAG disponibles")
+    logger.info("Módulos RAG disponibles")
 except ImportError as e:
-    logger.warning(f"⚠️ Módulos RAG no disponibles: {e}")
+    logger.warning(f"Módulos RAG no disponibles: {e}")
     RAG_AVAILABLE = False
 
 app = FastAPI(
