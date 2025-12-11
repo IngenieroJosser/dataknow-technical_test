@@ -1,104 +1,72 @@
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.schema import Document
-
 import pandas as pd
+import logging
 from typing import List, Dict, Any
-import json
+from rag_pipeline import LegalRAGPipeline
 
-class LegalDocumentProcessor:
-    def __init__(self, chunk_size=800, chunk_overlap=150):
-        """
-        Inicializar procesador de documentos legales
-        
-        Args:
-            chunk_size: Tamaño de fragmentos de texto
-            chunk_overlap: Superposición entre fragmentos
-        """
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            separators=["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " "],
-            length_function=len,
-        )
+logger = logging.getLogger(__name__)
+
+class DocumentProcessor:
+    def __init__(self, rag_pipeline: LegalRAGPipeline):
+        self.rag_pipeline = rag_pipeline
     
-    def process_excel_file(self, file_path: str) -> Dict[str, Any]:
+    def process_excel_file(self, file_path: str):
         """
-        Procesar archivo Excel con casos legales
+        Process an Excel file containing legal cases and add them to the vector database.
         
-        Columnas esperadas:
-        - CaseID: Identificador único del caso
-        - Title: Título del caso
-        - Description: Descripción detallada
-        - Sentence: Sentencia o resolución
-        - Category: Categoría (Redes Sociales, Educación, etc.)
-        - Date: Fecha del caso
-        - Details: Detalles adicionales (opcional)
+        Expected Excel columns:
+        - caso_id: Unique case identifier
+        - descripcion: Case description
+        - tipo: Type of case (e.g., 'difamacion', 'acoso_escolar')
+        - sentencia: Final sentence/outcome
+        - plataforma: Social media platform involved
+        - fecha: Date of sentence
         """
         try:
-            print(f"Leyendo archivo Excel: {file_path}")
-            
-            # Leer archivo Excel
+            # Read Excel file
             df = pd.read_excel(file_path)
-            print(f"Cargados {len(df)} casos desde Excel")
+            logger.info(f"Loaded Excel file with {len(df)} cases")
             
-            # Mostrar estructura del archivo
-            print(f"Columnas disponibles: {list(df.columns)}")
-            print(f"Primeros casos:\n{df.head()}")
-            
-            documents = []
-            
-            # Convertir cada fila a documento
-            for idx, row in df.iterrows():
-                # Crear texto comprehensivo del caso
-                case_text = f"""
-                DEMANDA LEGAL
+            # Process each case
+            cases_added = 0
+            for _, row in df.iterrows():
+                # Create case text for embedding
+                case_text = self._create_case_text(row)
                 
-                TÍTULO: {row.get('Title', 'Sin título')}
-                ID: {row.get('CaseID', f'CASE-{idx:03d}')}
-                FECHA: {row.get('Date', 'No especificada')}
-                CATEGORÍA: {row.get('Category', 'General')}
-                
-                DESCRIPCIÓN DEL CASO:
-                {row.get('Description', 'No hay descripción disponible.')}
-                
-                SENTENCIA O RESOLUCIÓN:
-                {row.get('Sentence', 'No hay sentencia registrada.')}
-                
-                DETALLES ADICIONALES:
-                {row.get('Details', 'No hay detalles adicionales.')}
-                """
-                
-                # Crear metadatos
+                # Create metadata
                 metadata = {
-                    "case_id": str(row.get('CaseID', f'CASE-{idx:03d}')),
-                    "title": str(row.get('Title', 'Sin título')),
-                    "category": str(row.get('Category', 'General')),
-                    "date": str(row.get('Date', '')),
-                    "sentence_summary": str(row.get('Sentence', '')),
-                    "source": "excel_database",
-                    "row_index": idx
+                    "caso_id": str(row.get('caso_id', '')),
+                    "tipo": str(row.get('tipo', '')),
+                    "sentencia": str(row.get('sentencia', '')),
+                    "plataforma": str(row.get('plataforma', '')),
+                    "fecha": str(row.get('fecha', '')),
+                    "descripcion": str(row.get('descripcion', ''))[:100]  # Truncate if too long
                 }
                 
-                # Crear documento LangChain
-                doc = Document(
-                    page_content=case_text.strip(),
-                    metadata=metadata
-                )
-                documents.append(doc)
+                # Add to vector database
+                self.rag_pipeline.add_case(case_text, metadata)
+                cases_added += 1
             
-            # Fragmentar documentos en chunks
-            print(f"Fragmentando {len(documents)} documentos...")
-            split_docs = self.text_splitter.split_documents(documents)
-            print(f"Fragmentados en {len(split_docs)} chunks de texto")
+            logger.info(f"Successfully added {cases_added} cases to the database")
+            return cases_added
             
-            return {
-                "documents": split_docs,
-                "count": len(split_docs),
-                "original_cases": len(df),
-                "columns": list(df.columns)
-            }
-            
-        except FileNotFoundError:
-            raise Exception(f"Archivo no encontrado: {file_path}")
         except Exception as e:
-            raise Exception(f"Error procesando archivo Excel: {str(e)}")
+            logger.error(f"Error processing Excel file: {str(e)}")
+            raise
+    
+    def _create_case_text(self, row) -> str:
+        """Create a comprehensive text representation of a case for embedding."""
+        parts = []
+        
+        if pd.notna(row.get('descripcion')):
+            parts.append(f"Descripción: {row['descripcion']}")
+        
+        if pd.notna(row.get('tipo')):
+            parts.append(f"Tipo de demanda: {row['tipo']}")
+        
+        if pd.notna(row.get('sentencia')):
+            parts.append(f"Sentencia: {row['sentencia']}")
+        
+        if pd.notna(row.get('plataforma')):
+            parts.append(f"Plataforma: {row['plataforma']}")
+        
+        return " | ".join(parts)

@@ -1,153 +1,65 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
-import os
-from dotenv import load_dotenv
+from rag_pipeline import LegalRAGPipeline
+import uvicorn
+import logging
 
-# Cargar variables de entorno
-load_dotenv()
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Importar módulos personalizados
-try:
-    from document_processor import LegalDocumentProcessor
-    from rag_pipeline import LegalRAGPipeline
-    print("Módulos importados correctamente")
-except ImportError as e:
-    print(f"Error de importación: {e}")
-    raise
+app = FastAPI(title="Legal AI Assistant API", version="1.0.0")
 
-app = FastAPI(
-    title="Legal AI Assistant API",
-    description="API para consulta de historial de demandas legales usando IA Generativa",
-    version="1.0.0"
-)
-
-# Configurar CORS para comunicación con frontend
+# Configure CORS to allow requests from your React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:8000"],
+    allow_origins=["http://localhost:3000"],  # Your React app's address
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Inicializar componentes principales
-processor = LegalDocumentProcessor()
-rag_pipeline = LegalRAGPipeline(use_local_embeddings=True)
+# Initialize the RAG pipeline
+rag_pipeline = LegalRAGPipeline()
 
-# Modelos de solicitud/respuesta
 class QueryRequest(BaseModel):
     question: str
-    history: Optional[List[dict]] = None
 
 class QueryResponse(BaseModel):
     answer: str
-    source_cases: Optional[List[dict]] = None
-    confidence: Optional[float] = None
-
-class IngestionResponse(BaseModel):
-    message: str
-    documents_processed: int
-    original_cases: int
+    confidence: float
+    source_cases: list
 
 @app.get("/")
 def read_root():
-    return {
-        "message": "Legal AI Assistant API - Prueba de Concepto",
-        "status": "operational",
-        "endpoints": {
-            "POST /api/query": "Consultar casos legales",
-            "POST /api/ingest": "Procesar documentos Excel",
-            "GET /api/health": "Verificar estado del sistema",
-            "GET /api/sample-questions": "Preguntas de ejemplo"
-        }
-    }
+    return {"message": "Legal AI Assistant API is running"}
 
-@app.get("/api/health")
-async def health_check():
-    """Verificar que todos los componentes estén funcionando"""
-    try:
-        return {
-            "status": "healthy",
-            "embeddings": "SentenceTransformer local",
-            "vector_store": "ChromaDB",
-            "llm": "FakeListLLM (modo prueba)"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "service": "legal-ai-assistant"}
 
-@app.post("/api/query", response_model=QueryResponse)
+@app.post("/query", response_model=QueryResponse)
 async def query_legal_assistant(request: QueryRequest):
     """
-    Endpoint principal para consultas legales
-    Procesa preguntas en lenguaje natural sobre casos legales
+    Main endpoint for querying the legal AI assistant.
+    This is what your React frontend will call.
     """
     try:
-        print(f"Consulta recibida: {request.question}")
+        logger.info(f"Received query: {request.question}")
         
-        # Usar pipeline RAG para obtener respuesta contextual
-        result = rag_pipeline.query(
-            question=request.question,
-            conversation_history=request.history
-        )
-        
-        print(f"Respuesta generada: {len(result['answer'])} caracteres")
+        # Use the RAG pipeline to get an answer
+        answer, confidence, source_cases = rag_pipeline.query(request.question)
         
         return QueryResponse(
-            answer=result["answer"],
-            source_cases=result.get("sources", []),
-            confidence=result.get("confidence", 0.0)
+            answer=answer,
+            confidence=confidence,
+            source_cases=source_cases
         )
+        
     except Exception as e:
-        print(f"Error en consulta: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error procesando la consulta: {str(e)}")
+        logger.error(f"Error processing query: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/ingest", response_model=IngestionResponse)
-async def ingest_documents():
-    """
-    Endpoint para procesar e ingerir archivos Excel de casos
-    Convierte a vectores y almacena en base de datos vectorial
-    """
-    try:
-        # Ruta al archivo Excel (configurar en .env)
-        excel_path = os.getenv("EXCEL_CASES_PATH", "./data/sentencias_pasadas.xlsx")
-        
-        if not os.path.exists(excel_path):
-            # Crear archivo de ejemplo si no existe
-            from create_sample_data import create_sample_excel
-            create_sample_excel(excel_path)
-            print(f"Archivo de ejemplo creado: {excel_path}")
-        
-        print(f"Procesando archivo: {excel_path}")
-        
-        # Procesar documentos
-        result = processor.process_excel_file(excel_path)
-        
-        # Almacenar en base de datos vectorial
-        rag_pipeline.initialize_from_documents(result["documents"])
-        
-        return IngestionResponse(
-            message="Documentos procesados e ingestados exitosamente",
-            documents_processed=result["count"],
-            original_cases=result["original_cases"]
-        )
-    except Exception as e:
-        print(f"Error en ingestión: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error en ingestión: {str(e)}")
-
-@app.get("/api/sample-questions")
-async def get_sample_questions():
-    """
-    Retorna preguntas de ejemplo para el frontend
-    """
-    return {
-        "questions": [
-            "¿Cuáles son las sentencias de 3 demandas?",
-            "¿De qué se trataron las 3 demandas anteriores?",
-            "¿Cuál fue la sentencia del caso que habla de acoso escolar?",
-            "¿diga el detalle de la demanda relacionada con acoso escolar?",
-            "¿existen casos que hablan sobre el PIAR, indique de que trataron los casos y cuáles fueron sus sentencias?"
-        ],
-        "instructions": "Las respuestas se dan en lenguaje coloquial para personas sin conocimientos de derecho"
-    }
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)

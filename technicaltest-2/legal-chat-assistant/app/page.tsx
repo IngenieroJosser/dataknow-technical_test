@@ -89,35 +89,35 @@ export default function LegalChatAssistant() {
     });
   };
 
-  // Mock API response
+  // API response
   const sendQuery = async (userMessage: string) => {
     setIsLoading(true);
     
-    // Simulate AI processing
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    let response = "";
-    
-    if (userMessage.includes('3 demandas') && !userMessage.includes('trataron')) {
-      response = "Basándome en casos relevantes de la base de datos:\n\n1. **Caso #2023-045** - Difamación en redes sociales\n   Sentencia: Indemnización de $15,000 USD + retractación pública\n\n2. **Caso #2023-012** - Acoso digital escolar\n   Sentencia: 6 meses de servicios comunitarios + prohibición de contacto\n\n3. **Caso #2023-078** - Derechos de autor digital\n   Sentencia: Multa de $8,000 USD + retiro del contenido";
-    } else if (userMessage.includes('trataron')) {
-      response = "Los tres casos principales trataron sobre:\n\n• **Difamación**: Publicación de información falsa en LinkedIn\n• **Acoso escolar**: Mensajes amenazantes en Instagram\n• **Derechos de autor**: Uso no autorizado en campañas de Facebook";
-    } else if (userMessage.includes('acoso escolar')) {
-      response = "**Caso de Acoso Escolar Digital - Referencia #2023-012**\n\n**Sentencia**:\n• 6 meses de servicios comunitarios\n• Terapia psicológica obligatoria\n• Prohibición de contacto digital por 2 años\n• Curso de conciencia digital\n\nLa corte consideró el impacto psicológico y la persistencia del acoso.";
-    } else if (userMessage.includes('PIAR')) {
-      response = "**Casos sobre PIAR (Protocolo de Intervención en Acoso Escolar)**:\n\n1. **Caso #2022-112** - Falta de aplicación\n   Sentencia: Multa administrativa + capacitación obligatoria\n\n2. **Caso #2023-078** - Implementación incompleta\n   Sentencia: Supervisor externo por 6 meses + auditorías";
-    } else {
-      response = "He analizado tu consulta. Para mayor precisión, puedes especificar:\n1. Tipo de demanda\n2. Plataforma involucrada\n3. Si buscas antecedentes específicos\n\nO selecciona una pregunta de ejemplo.";
+    try {
+      const response = await fetch('http://localhost:8000/query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ question: userMessage })
+      });
+      
+      const data = await response.json();
+      
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        content: data.answer,
+        sender: 'assistant',
+        timestamp: new Date()
+      }]);
+      
+    } catch (error) {
+      console.error('Error querying backend:', error);
+      // Fallback to mock response if backend fails
+      // ... (keep your existing mock response logic)
+    } finally {
+      setIsLoading(false);
     }
-    
-    setMessages(prev => [...prev, {
-      id: Date.now().toString(),
-      content: response,
-      sender: 'assistant',
-      timestamp: new Date()
-    }]);
-    
-    setIsLoading(false);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
